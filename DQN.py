@@ -51,11 +51,13 @@ class DQN(nn.Module):
         x = F.relu(self.layer2(x))
         return self.layer3(x)
     
-DIMENSION=20
-n_observation=DIMENSION*DIMENSION
-n_actions=DIMENSION*(DIMENSION-1)
+
 
 def main(args):
+
+    DIMENSION=args.DIMENSION
+    n_observation=DIMENSION*DIMENSION
+    n_actions=DIMENSION*(DIMENSION-1)
     policy_net = DQN(n_observation, n_actions).to(device)
     target_net = DQN(n_observation, n_actions).to(device)
     target_net.load_state_dict(policy_net.state_dict())
@@ -64,7 +66,7 @@ def main(args):
     memory = ReplayMemory(500)
 
     steps_done = 0
-
+    train_loss=[]
 
     def select_action(state,steps_done):
         sample = random.random()
@@ -129,20 +131,20 @@ def main(args):
 
 
     if torch.cuda.is_available():
-        num_episodes = 600
+        num_episodes = 6000
     else:
-        num_episodes = 50
+        num_episodes = 500
 
-    for i_episode in range(num_episodes):
+    for i_episode in tqdm(range(num_episodes)):
         # Initialize the environment and state
         state = torch.rand(DIMENSION,DIMENSION,dtype=torch.float32)
         # calculate the hadamard ratio of state
-        H_ratio=torch.norm(state,dim=1).prod().item()/(torch.det(state).item())**2
-        H_ratio=log(H_ratio)/2 # a float number 
-        
+        H_ratio=torch.norm(state,dim=1).prod().item()/(torch.abs(torch.det(state)).item())
+        H_ratio=log(H_ratio) # a float number 
+        lengths= torch.norm(state,dim=1)  # length of each row
+        shortest_lengths =  [torch.min(lengths).item()]
         ratios=[H_ratio]
-        train_loss=[]
-        for t in tqdm(range(100)):
+        for t in range(100):
             # Select and perform an action
             action= select_action(state.reshape(-1),steps_done)
             steps_done+=1
@@ -152,6 +154,8 @@ def main(args):
             mu=torch.dot(state[i],state[j])/torch.dot(state[j],state[j])
             next_state=state.clone()
             next_state[i]-=torch.round(mu)*state[j]
+            lengths[i] = torch.norm(next_state[i])  # update length of the i-th row
+            shortest_lengths.append(torch.min(lengths).item())
             next_H_ratio = H_ratio-torch.log(torch.norm(state[i])).item()+torch.log(torch.norm(next_state[i])).item()
             ratios.append(next_H_ratio)
             reward = torch.tensor([[H_ratio-next_H_ratio]])
@@ -174,34 +178,42 @@ def main(args):
                 target_net_state_dict[key] = policy_net_state_dict[key]*args.TAU + target_net_state_dict[key]*(1-args.TAU)
             target_net.load_state_dict(target_net_state_dict)
             
-            if (steps_done+1) % 100 == 0:
+            if (steps_done+1) % 1000 == 0:
             # save parameters of policy_net and target_net
                 torch.save(policy_net.state_dict(), "new_experiment/policy_net.pth")
                 torch.save(target_net.state_dict(), "new_experiment/target_net.pth")
-        # plot ratios versus range(1001)
-        plt.plot(range(101), ratios)
-        plt.title("H_ratio of each step")
-        plt.xlabel("steps")
-        plt.ylabel("H_ratio")
-        plt.xscale("log", base=10)
-        plt.savefig(f"new_experiment/H_ratio_episode {i_episode}.png", dpi=150)
-        plt.close()
+        # plot ratios and shortest_length
+        if (torch.cuda.is_available() and i_episode % 1000 == 0) or (not torch.cuda.is_available() and i_episode % 100 == 0):
+            plt.plot(range(len(ratios)), ratios)
+            plt.title("H_ratio of each step")
+            plt.xlabel("steps")
+            plt.ylabel("H_ratio")
+            plt.xscale("log", base=10)
+            plt.savefig(f"new_experiment/H_ratio_episode {i_episode}.png", dpi=150)
+            plt.close()
 
-        # plot train_loss versus range(1000)
-        plt.plot(range(100), train_loss, label="train_loss")
-        plt.title("train_loss")
-        plt.xlabel("steps")
-        plt.ylabel("loss")
-        plt.xscale("log", base=10)
-        plt.savefig(f"new_experiment/train_loss_epsode {i_episode}.png", dpi=150)
-        plt.close()
+            plt.plot(range(len(shortest_lengths)), shortest_lengths)
+            plt.title("Shortest length of each step")
+            plt.xlabel("steps")
+            plt.ylabel("shortest length")
+            plt.xscale("log", base=10)
+            plt.savefig(f"new_experiment/shortest_length_episode {i_episode}.png", dpi=150)
+            plt.close()
+
+    plt.plot(range(len(train_loss)), train_loss)
+    plt.title("Train loss")
+    plt.xlabel("steps")
+    plt.ylabel("loss")
+    plt.xscale("log", base=10)
+    plt.savefig("new_experiment/train_loss.png", dpi=150)
                 
 
 if __name__ == "__main__":
     parser = ArgumentParser()
+    parser.add_argument("--DIMENSION",type=int,default=20)
     parser.add_argument("--BATCH_SIZE", type=int, default=64)
     parser.add_argument("--LR", type=float, default=1e-4)
-    parser.add_argument("--GAMMA", type=float, default=0.99)
+    parser.add_argument("--GAMMA", type=float, default=0.999) 
     parser.add_argument("--EPS_START", type=float, default=0.9)
     parser.add_argument("--EPS_END", type=float, default=0.05)
     parser.add_argument("--EPS_DECAY", type=int, default=200)

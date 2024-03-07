@@ -55,25 +55,31 @@ def Hahamard_ratio(B):
     Returns: a float number that is the Hahamard ratio
     """
     n = B.size(dim=0)
-    sqaure_length_prod=torch.norm(B,dim=1).prod().item()
-    sqaure_det=torch.det(B).item()**2
-    return log(sqaure_length_prod/sqaure_det)/2
+    length_prod=torch.norm(B,dim=1).prod().item()
+    abs_det=torch.abs(torch.det(B)).item()
+    return log(length_prod/abs_det)
         
 
 # Example usage
-B=torch.rand(8,8,dtype=torch.float32)
+B=torch.rand(20,20,dtype=torch.float32)
 
 print("shortest length before LLL:", torch.min(torch.norm(B, dim=1)))
 
 delta = 0.75
+
+
+
 reduced_B,ratios = lll_reduction(B, delta)
 
 print("shortest length after LLL:", torch.min(torch.norm(reduced_B, dim=1)))
 print("log Hadamard ratio before LLL:", ratios[0])
 print("log Hadamard ratio after LLL:", ratios[-1])
 # plot ratios
+'''
 plt.plot(range(len(ratios)), ratios)
 plt.title("H_ratio of each step")
 plt.xlabel("steps")
 plt.ylabel("H_ratio")
 plt.show()
+'''
+
